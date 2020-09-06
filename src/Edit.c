@@ -37,6 +37,7 @@
 #include "MuiLanguage.h"
 #include "Notepad3.h"
 #include "Config/Config.h"
+#include "DarkMode/DarkMode.h"
 
 #include "SciCall.h"
 #include "SciLexer.h"
@@ -123,7 +124,7 @@ static int msgcmp(void* mqc1, void* mqc2)
       && (pMQC1->cmd == pMQC2->cmd)
       && (pMQC1->wparam == pMQC2->wparam)
       && (pMQC1->lparam == pMQC2->lparam)) {
-    return 0;
+    return FALSE;
   }
   return 1;
 }
@@ -254,7 +255,8 @@ void EditInitWordDelimiter(HWND hwnd)
   StringCchCopyA(WhiteSpaceCharsAccelerated, COUNTOF(WhiteSpaceCharsAccelerated), WhiteSpaceCharsDefault);
 
   // add only 7-bit-ASCII chars to accelerated whitespace list
-  for (size_t i = 0; i < StringCchLenA(whitesp, ANSI_CHAR_BUFFER); i++) {
+  size_t const wsplen = StringCchLenA(whitesp, ANSI_CHAR_BUFFER);
+  for (size_t i = 0; i < wsplen; i++) {
     if (whitesp[i] & 0x7F) {
       if (!StrChrA(WhiteSpaceCharsAccelerated, whitesp[i])) {
         StringCchCatNA(WhiteSpaceCharsAccelerated, COUNTOF(WhiteSpaceCharsAccelerated), &(whitesp[i]), 1);
@@ -265,7 +267,8 @@ void EditInitWordDelimiter(HWND hwnd)
   // construct word char array
   StringCchCopyA(WordCharsAccelerated, COUNTOF(WordCharsAccelerated), WordCharsDefault); // init
   // add punctuation chars not listed in white-space array
-  for (size_t i = 0; i < StringCchLenA(PunctuationCharsDefault, ANSI_CHAR_BUFFER); i++) {
+  size_t const pcdlen = StringCchLenA(PunctuationCharsDefault, ANSI_CHAR_BUFFER);
+  for (size_t i = 0; i < pcdlen; i++) {
     if (!StrChrA(WhiteSpaceCharsAccelerated, PunctuationCharsDefault[i])) {
       StringCchCatNA(WordCharsAccelerated, COUNTOF(WordCharsAccelerated), &(PunctuationCharsDefault[i]), 1);
     }
@@ -495,7 +498,7 @@ bool EditIsRecodingNeeded(WCHAR* pszText, int cchLen)
 //
 size_t EditGetSelectedText(LPWSTR pwchBuffer, size_t wchLength)
 {
-  if (!pwchBuffer || (wchLength == 0)) { return 0; }
+  if (!pwchBuffer || (wchLength == 0)) { return FALSE; }
   size_t const selSize = SciCall_GetSelText(NULL);
   if (1 < selSize) {
     char* pszText = AllocMem(selSize, HEAP_ZERO_MEMORY);
@@ -510,7 +513,7 @@ size_t EditGetSelectedText(LPWSTR pwchBuffer, size_t wchLength)
     pwchBuffer[0] = L'\0';
     return selSize;
   }
-  return 0;
+  return FALSE;
 }
 
 
@@ -556,7 +559,7 @@ char* EditGetClipboardText(HWND hwnd, bool bCheckEncoding, int* pLineCount, int*
     mlen = WideCharToMultiByteEx(Encoding_SciCP, 0, pwch, wlen, NULL, 0, NULL, NULL);
     pmch = (char*)AllocMem(mlen + 1, HEAP_ZERO_MEMORY);
     if (pmch && mlen != 0) {
-      ptrdiff_t const cnt = WideCharToMultiByteEx(Encoding_SciCP, 0, pwch, wlen, pmch, mlen + 1, NULL, NULL);
+      ptrdiff_t const cnt = WideCharToMultiByteEx(Encoding_SciCP, 0, pwch, wlen, pmch, SizeOfMem(pmch), NULL, NULL);
       if (cnt == 0)
         return pmch;
     }
@@ -607,7 +610,7 @@ char* EditGetClipboardText(HWND hwnd, bool bCheckEncoding, int* pLineCount, int*
       FreeMem(pmch);
       pmch = AllocMem(mlen2 + 1, HEAP_ZERO_MEMORY);
       if (pmch) {
-        StringCchCopyA(pmch, mlen2 + 1, ptmp);
+        StringCchCopyA(pmch, SizeOfMem(pmch), ptmp);
         FreeMem(ptmp);
       }
     }
@@ -677,7 +680,7 @@ bool EditSetClipboardText(HWND hwnd, const char* pszText, size_t cchText)
   if (cchTextW > 1) {
     pszTextW = AllocMem((cchTextW + 1) * sizeof(WCHAR), HEAP_ZERO_MEMORY);
     if (pszTextW) {
-      MultiByteToWideCharEx(Encoding_SciCP, 0, pszText, cchText, pszTextW, cchTextW);
+      MultiByteToWideCharEx(Encoding_SciCP, 0, pszText, cchText, pszTextW, cchTextW + 1);
       pszTextW[cchTextW] = L'\0';
     }
   }
@@ -780,7 +783,7 @@ bool EditCopyRangeAppend(HWND hwnd, DocPos posBegin, DocPos posEnd, bool bAppend
     if (cchTextW > 0) {
       pszTextW = AllocMem((cchTextW + 1) * sizeof(WCHAR), HEAP_ZERO_MEMORY);
       if (pszTextW) {
-        MultiByteToWideCharEx(Encoding_SciCP, 0, pszText, length, pszTextW, cchTextW);
+        MultiByteToWideCharEx(Encoding_SciCP, 0, pszText, length, pszTextW, cchTextW + 1);
         pszTextW[cchTextW] = L'\0';
       }
     }
@@ -824,7 +827,7 @@ bool EditCopyRangeAppend(HWND hwnd, DocPos posBegin, DocPos posEnd, bool bAppend
 
   // Add New
   if (pszTextW && *pszTextW && pszNewTextW) {
-    StringCchCat(pszNewTextW, cchNewText+1, pszTextW);
+    StringCchCat(pszNewTextW, cchNewText + 1, pszTextW);
     res = SetClipboardTextW(hwndParent, pszNewTextW, cchNewText);
   }
 
@@ -1481,11 +1484,11 @@ bool EditSaveFile(
           size_t cbDataConverted = 0ULL;
           if (Encoding_IsMBCS(status->iEncoding)) {
             cbDataConverted = (size_t)WideCharToMultiByteEx(uCodePage, 0, lpDataWide, cbDataWide,
-                                                            lpData, cbDataNew, NULL, NULL);
+                                                            lpData, SizeOfMem(lpData), NULL, NULL);
           }
           else {
             cbDataConverted = (size_t)WideCharToMultiByteEx(uCodePage, WC_NO_BEST_FIT_CHARS, lpDataWide, cbDataWide,
-                                                            lpData, cbDataNew, NULL, isUTF_7_or_8 ? NULL : &bCancelDataLoss);
+                                                            lpData, SizeOfMem(lpData), NULL, isUTF_7_or_8 ? NULL : &bCancelDataLoss);
           }
 
           FreeMem(lpDataWide);
@@ -3779,7 +3782,7 @@ void EditStripFirstCharacter(HWND hwnd)
           DocPos const nextPos = SciCall_PositionAfter(selTargetStart);
           DocPos const len = (selTargetEnd - nextPos);
           if (len > 0) {
-            StringCchCopyNA(lineBuffer, iMaxLineLen, SciCall_GetRangePointer(nextPos, len + 1), len);
+            StringCchCopyNA(lineBuffer, SizeOfMem(lineBuffer), SciCall_GetRangePointer(nextPos, len + 1), len);
             SciCall_SetTargetRange(selTargetStart, selTargetEnd);
             SciCall_ReplaceTarget(len, lineBuffer);
           }
@@ -3865,7 +3868,7 @@ void EditStripLastCharacter(HWND hwnd, bool bIgnoreSelection, bool bTrailingBlan
           if (bTrailingBlanksOnly) {
             len = (selTargetEnd - selTargetStart);
             if (len > 0) {
-              StringCchCopyNA(lineBuffer, iMaxLineLen, SciCall_GetRangePointer(selTargetStart, len + 1), len);
+              StringCchCopyNA(lineBuffer, SizeOfMem(lineBuffer), SciCall_GetRangePointer(selTargetStart, len + 1), len);
               DocPos end = (DocPos)StrCSpnA(lineBuffer, "\r\n");
               DocPos i = end;
               while (--i >= 0) {
@@ -4094,7 +4097,7 @@ void EditCompressBlanks()
 
         SciCall_SetTargetRange(saveTargetBeg, saveTargetEnd); //restore
 
-        DocPos const iNewLen = (DocPos)StringCchLenA(pszOut, cch + 1);
+        DocPos const iNewLen = (DocPos)StringCchLenA(pszOut, SizeOfMem(pszOut));
 
         if (iCurPos < iAnchorPos) {
           EditSetSelectionEx(iCurPos + iNewLen, iCurPos, -1, -1);
@@ -4316,16 +4319,6 @@ void EditFocusMarkedLinesCmd(HWND hwnd, bool bCopy, bool bDelete)
 
     SciCall_EndUndoAction();
     _OBSERVE_NOTIFY_CHANGE_;
-
-    if (bDelete) {
-        for (int m = MARKER_NP3_1; m <= MARKER_NP3_BOOKMARK; ++m) { // all(!)
-            if (bitmask & (1 << m)) {
-                if (SciCall_MarkerNext(0, (1 << m)) < 0) {
-                    WordBookMarks[m].in_use = false;
-                }
-            }
-        }
-    }
 
     SciCall_GotoLine(min_ln(curLn, Sci_GetLastDocLineNumber()));
 }
@@ -4757,7 +4750,7 @@ void EditSortLines(HWND hwnd, int iSortFlags)
 
     if (iSortFlags & SORT_REMWSPACELN) {
       StrTrimA(pmsz, "\t\v \r\n"); // try clean line
-      if (StringCchLenA(pmsz, cchm) == 0) {
+      if (StrIsEmptyA(pmsz)) {
         // white-space only - remove
         continue;
       }
@@ -5346,50 +5339,47 @@ static void  _SetSearchFlags(HWND hwnd, LPEDITFINDREPLACE lpefr)
 // Wildcard search uses the regexp engine to perform a simple search with * ? as wildcards 
 // instead of more advanced and user-unfriendly regexp syntax
 // for speed, we only need POSIX syntax here
-static void  _EscapeWildcards(char* szFind2, LPCEDITFINDREPLACE lpefr)
+static void  _EscapeWildcards(char* szFind2, size_t cch, LPCEDITFINDREPLACE lpefr)
 {
-  char szWildcardEscaped[FNDRPL_BUFFER] = { '\0' };
-  int iSource = 0;
-  int iDest = 0;
-
-  lpefr->fuFlags |= SCFIND_REGEXP;
-
-  while (szFind2[iSource] != '\0')
+  char *const szWildcardEscaped = (char *)AllocMem((cch<<1) + 1, HEAP_ZERO_MEMORY);
+  if (szWildcardEscaped)
   {
-    char c = szFind2[iSource];
-    if (c == '*')
+    size_t iSource = 0;
+    size_t iDest = 0;
+
+    lpefr->fuFlags |= SCFIND_REGEXP;
+
+    while ((iSource < cch) && (szFind2[iSource] != '\0'))
     {
-      szWildcardEscaped[iDest++] = '.';
-    }
-    else if (c == '?')
-    {
-      c = '.';
-    }
-    else
-    {
-      if (c == '^' ||
-        c == '$' ||
-        c == '(' ||
-        c == ')' ||
-        c == '[' ||
-        c == ']' ||
-        c == '{' ||
-        c == '}' ||
-        c == '.' ||
-        c == '+' ||
-        c == '|' ||
-        c == '\\')
-      {
-        szWildcardEscaped[iDest++] = '\\';
+      char c = szFind2[iSource];
+      if (c == '*') {
+        szWildcardEscaped[iDest++] = '.';
+      } else if (c == '?') {
+        c = '.';
+      } else {
+        if (c == '^' ||
+            c == '$' ||
+            c == '(' ||
+            c == ')' ||
+            c == '[' ||
+            c == ']' ||
+            c == '{' ||
+            c == '}' ||
+            c == '.' ||
+            c == '+' ||
+            c == '|' ||
+            c == '\\') {
+          szWildcardEscaped[iDest++] = '\\';
+        }
       }
+      szWildcardEscaped[iDest++] = c;
+      ++iSource;
     }
-    szWildcardEscaped[iDest++] = c;
-    iSource++;
+
+    StringCchCopyNA(szFind2, cch, szWildcardEscaped, SizeOfMem(szWildcardEscaped));
+
+    FreeMem(szWildcardEscaped);
   }
-
-  szWildcardEscaped[iDest] = '\0';
-
-  StringCchCopyNA(szFind2, FNDRPL_BUFFER, szWildcardEscaped, COUNTOF(szWildcardEscaped));
 }
 
 
@@ -5397,31 +5387,30 @@ static void  _EscapeWildcards(char* szFind2, LPCEDITFINDREPLACE lpefr)
 //
 //  _EditGetFindStrg()
 //
-static int  _EditGetFindStrg(HWND hwnd, LPCEDITFINDREPLACE lpefr, LPSTR szFind, int cchCnt)
-{
+static size_t _EditGetFindStrg(HWND hwnd, LPCEDITFINDREPLACE lpefr, LPSTR szFind, size_t cchCnt) {
   UNUSED(hwnd);
-  if (StringCchLenA(lpefr->szFind, COUNTOF(lpefr->szFind))) {
-    StringCchCopyA(szFind, cchCnt, lpefr->szFind);
+  if (!lpefr) { return FALSE; }
+  if (!StrIsEmptyA(lpefr->szFind)) {
+    StringCchCopyNA(szFind, cchCnt, lpefr->szFind, COUNTOF(lpefr->szFind));
   }
   else {
     CopyFindPatternMB(szFind, cchCnt);
-    StringCchCopyA(lpefr->szFind, COUNTOF(lpefr->szFind), szFind);
+    StringCchCopyNA(lpefr->szFind, COUNTOF(lpefr->szFind), szFind, cchCnt);
   }
-  if (!StringCchLenA(szFind, cchCnt)) { return 0; }
+  if (StrIsEmptyA(lpefr->szFind)) {
+    return FALSE;
+  }
 
   bool const bIsRegEx = (lpefr->fuFlags & SCFIND_REGEXP);
   if (lpefr->bTransformBS || bIsRegEx) {
     TransformBackslashes(szFind, bIsRegEx, Encoding_SciCP, NULL);
   }
-  if (StringCchLenA(szFind, FNDRPL_BUFFER) > 0) {
-    if (lpefr->bWildcardSearch)
-      _EscapeWildcards(szFind, lpefr);
+  if (!StrIsEmptyA(szFind) && (lpefr->bWildcardSearch)) {
+    _EscapeWildcards(szFind, cchCnt, lpefr);
   }
-  
-  return (int)StringCchLenA(szFind, FNDRPL_BUFFER);
+
+  return StringCchLenA(szFind, cchCnt);
 }
-
-
 
 
 //=============================================================================
@@ -5488,46 +5477,45 @@ typedef enum { MATCH = 0, NO_MATCH = 1, INVALID = 2 } RegExResult_t;
 
 static RegExResult_t _FindHasMatch(HWND hwnd, LPCEDITFINDREPLACE lpefr, DocPos iStartPos, bool bMarkAll, bool bFirstMatchOnly)
 {
-    char         szFind[FNDRPL_BUFFER];
-    DocPos const slen = _EditGetFindStrg(hwnd, lpefr, szFind, COUNTOF(szFind));
-    if (slen == 0) { return NO_MATCH; }
-    int const sFlags = (int)(lpefr->fuFlags);
+  char szFind[FNDRPL_BUFFER] = { '\0' };
+  DocPos const slen = _EditGetFindStrg(hwnd, lpefr, szFind, COUNTOF(szFind));
+  if (slen == 0) {
+    return NO_MATCH;
+  }
+  int const sFlags = (int)(lpefr->fuFlags);
 
-    DocPos const iStart   = bFirstMatchOnly ? iStartPos : 0;
-    DocPos const iTextEnd = Sci_GetDocEndPosition();
+  DocPos const iStart = bFirstMatchOnly ? iStartPos : 0;
+  DocPos const iTextEnd = Sci_GetDocEndPosition();
 
-    DocPos       start = iStart;
-    DocPos       end   = iTextEnd;
-    DocPos const iPos  = _FindInTarget(szFind, slen, sFlags, &start, &end, false, FRMOD_IGNORE);
+  DocPos start = iStart;
+  DocPos end = iTextEnd;
+  DocPos const iPos = _FindInTarget(szFind, slen, sFlags, &start, &end, false, FRMOD_IGNORE);
 
-    if (bFirstMatchOnly && !Globals.bReplaceInitialized) {
-        if (IsWindow(Globals.hwndDlgFindReplace) && (GetForegroundWindow() == Globals.hwndDlgFindReplace)) {
-            if (iPos >= 0) {
-                SciCall_SetSel(start, end);
-            }
-            else {
-                SciCall_ScrollCaret();
-            }
-        }
+  if (bFirstMatchOnly && !Globals.bReplaceInitialized) {
+    if (IsWindow(Globals.hwndDlgFindReplace) && (GetForegroundWindow() == Globals.hwndDlgFindReplace)) {
+      if (iPos >= 0) {
+        SciCall_SetSel(start, end);
+      } else {
+        SciCall_ScrollCaret();
+      }
     }
-    else // mark all matches
-    {
-        if (bMarkAll) {
-            EditClearAllOccurrenceMarkers(hwnd);
-            if (iPos >= 0) {
-                EditMarkAll(szFind, (int)(lpefr->fuFlags), 0, iTextEnd, false);
-                if (FocusedView.HideNonMatchedLines) {
-                    EditFoldMarkedLineRange(lpefr->hwnd, true);
-                }
-            }
-            else {
-                if (FocusedView.HideNonMatchedLines) {
-                    EditFoldMarkedLineRange(lpefr->hwnd, false);
-                }
-            }
+  } else // mark all matches
+  {
+    if (bMarkAll) {
+      EditClearAllOccurrenceMarkers(hwnd);
+      if (iPos >= 0) {
+        EditMarkAll(szFind, (int)(lpefr->fuFlags), 0, iTextEnd, false);
+        if (FocusedView.HideNonMatchedLines) {
+          EditFoldMarkedLineRange(lpefr->hwnd, true);
         }
+      } else {
+        if (FocusedView.HideNonMatchedLines) {
+          EditFoldMarkedLineRange(lpefr->hwnd, false);
+        }
+      }
     }
-    return ((iPos >= 0) ? MATCH : ((iPos == (DocPos)(-1)) ? NO_MATCH : INVALID));
+  }
+  return ((iPos >= 0) ? MATCH : ((iPos == (DocPos)(-1)) ? NO_MATCH : INVALID));
 }
 
 
@@ -5580,7 +5568,7 @@ static LRESULT CALLBACK EditBoxForPasteFixes(HWND hwnd, UINT uMsg, WPARAM wParam
             SendMessage(hwnd, EM_REPLACESEL, (WPARAM)TRUE, (LPARAM)wchBuf);
           }
         }
-        return !0;
+        return TRUE;
 
         //case WM_LBUTTONDOWN:
         //  SendMessage(hwnd, EM_REPLACESEL, (WPARAM)TRUE, (LPARAM)L"X");
@@ -5602,7 +5590,7 @@ static LRESULT CALLBACK EditBoxForPasteFixes(HWND hwnd, UINT uMsg, WPARAM wParam
 //
 //  EditFindReplaceDlgProc()
 //
-extern int    s_flagMatchText;
+extern int    g_flagMatchText;
 
 static INT_PTR CALLBACK EditFindReplaceDlgProc(HWND hwnd,UINT umsg,WPARAM wParam,LPARAM lParam)
 {
@@ -5625,15 +5613,31 @@ static INT_PTR CALLBACK EditFindReplaceDlgProc(HWND hwnd,UINT umsg,WPARAM wParam
   {
   case WM_INITDIALOG:
     {
+      Globals.hwndDlgFindReplace = hwnd;
+
       // clear cmd line stuff
-      s_flagMatchText = 0;
+      g_flagMatchText = 0;
       sg_pefrData = NULL;
 
       // the global static Find/Replace data structure
       SetWindowLongPtr(hwnd, DWLP_USER, (LONG_PTR)lParam);
       SetDialogIconNP3(hwnd);
 
-      Globals.hwndDlgFindReplace = hwnd;
+      InitWindowCommon(hwnd, true);
+
+#ifdef D_NP3_WIN10_DARK_MODE
+      if (UseDarkMode()) {
+        SetExplorerTheme(GetDlgItem(hwnd, IDOK));
+        SetExplorerTheme(GetDlgItem(hwnd, IDCANCEL));
+        SetExplorerTheme(GetDlgItem(hwnd, IDC_FINDPREV));
+        SetExplorerTheme(GetDlgItem(hwnd, IDC_REPLACE));
+        SetExplorerTheme(GetDlgItem(hwnd, IDC_REPLACEALL));
+        SetExplorerTheme(GetDlgItem(hwnd, IDC_REPLACEINSEL));
+        SetExplorerTheme(GetDlgItem(hwnd, IDC_SWAPSTRG));
+        SetExplorerTheme(GetDlgItem(hwnd, IDC_TOGGLE_VISIBILITY));
+        //SetExplorerTheme(GetDlgItem(hwnd, IDC_RESIZEGRIP));
+      }
+#endif
 
       SetTimer(hwnd, IDT_TIMER_MRKALL, USER_TIMER_MINIMUM, MQ_ExecuteNext);
 
@@ -5814,13 +5818,15 @@ static INT_PTR CALLBACK EditFindReplaceDlgProc(HWND hwnd,UINT umsg,WPARAM wParam
 
       _SetSearchFlags(hwnd, sg_pefrData); // sync
       sg_pefrData->bStateChanged = true;  // force update
+
+      DialogEnableControl(hwnd, IDC_TOGGLE_VISIBILITY, sg_pefrData->bMarkOccurences);
     }
-    return !0; // (!) further processing
+    return TRUE; // (!) further processing
 
   case WM_ENABLE:
     // modal child dialog should disable main window too
     EnableWindow(Globals.hwndMain, (BOOL)wParam);
-    return !0;
+    return TRUE;
 
   case WM_DESTROY:
     {
@@ -5831,7 +5837,7 @@ static INT_PTR CALLBACK EditFindReplaceDlgProc(HWND hwnd,UINT umsg,WPARAM wParam
       {
         if (s_anyMatch == MATCH) {
           // Save MRUs
-          if (StringCchLenA(sg_pefrData->szFind, COUNTOF(sg_pefrData->szFind))) {
+          if (!StrIsEmptyA(sg_pefrData->szFind)) {
             if (GetDlgItemText(hwnd, IDC_FINDTEXT, s_tchBuf, COUNTOF(s_tchBuf))) {
               MRU_Add(Globals.pMRUfind, s_tchBuf, 0, -1, -1, NULL);
               SetFindPattern(s_tchBuf);
@@ -5887,7 +5893,7 @@ static INT_PTR CALLBACK EditFindReplaceDlgProc(HWND hwnd,UINT umsg,WPARAM wParam
       sg_pefrData = NULL;
       Globals.hwndDlgFindReplace = NULL;
     }
-    return 0;
+    return FALSE;
 
 
     case WM_DPICHANGED:
@@ -5897,10 +5903,46 @@ static INT_PTR CALLBACK EditFindReplaceDlgProc(HWND hwnd,UINT umsg,WPARAM wParam
         dpi.y = HIWORD(wParam);
         UpdateWindowLayoutForDPI(hwnd, (RECT*)lParam, &dpi);
       }
-      return !0; // further processing
+      return TRUE; // further processing
 
 
-  case WM_ACTIVATE:
+#ifdef D_NP3_WIN10_DARK_MODE
+
+      case WM_CTLCOLORDLG:
+      case WM_CTLCOLORSTATIC: {
+        if (UseDarkMode()) {
+          return SetDarkModeCtlColors((HDC)wParam);
+        }
+      } break;
+
+      case WM_SETTINGCHANGE:
+        if (IsDarkModeSupported() && IsColorSchemeChangeMessage(lParam)) {
+          SendMessage(hwnd, WM_THEMECHANGED, 0, 0);
+        }
+        break;
+
+      case WM_THEMECHANGED:
+        if (IsDarkModeSupported()) {
+          bool const darkModeEnabled = CheckDarkModeEnabled();
+          AllowDarkModeForWindow(hwnd, darkModeEnabled);
+          RefreshTitleBarThemeColor(hwnd);
+
+          int const buttons[] = { IDOK, IDCANCEL, IDC_FINDPREV, IDC_REPLACE, IDC_SWAPSTRG,
+                                  IDC_REPLACEALL, IDC_REPLACEINSEL, IDC_TOGGLE_VISIBILITY };
+
+          for (int id = 0; id < COUNTOF(buttons); ++id) {
+            HWND const hBtn = GetDlgItem(hwnd, buttons[id]);
+            AllowDarkModeForWindow(hBtn, darkModeEnabled);
+            SendMessage(hBtn, WM_THEMECHANGED, 0, 0);
+          }
+          UpdateWindow(hwnd);
+        }
+        break;
+
+#endif
+
+
+      case WM_ACTIVATE:
     {
       if (!sg_pefrData) { return false; }
 
@@ -5985,7 +6027,7 @@ static INT_PTR CALLBACK EditFindReplaceDlgProc(HWND hwnd,UINT umsg,WPARAM wParam
                 size_t const len = StringCchLenA(pClip, 0);
                 if (len) {
                   lpszSelection = AllocMem(len + 1, HEAP_ZERO_MEMORY);
-                  StringCchCopyA(lpszSelection, len + 1, pClip);
+                  StringCchCopyA(lpszSelection, SizeOfMem(lpszSelection), pClip);
                 }
                 FreeMem(pClip);
               }
@@ -6048,6 +6090,7 @@ static INT_PTR CALLBACK EditFindReplaceDlgProc(HWND hwnd,UINT umsg,WPARAM wParam
         }
 
         _DelayMarkAll(hwnd, 50, s_InitialSearchStart);
+
       }
       break;
 
@@ -6255,12 +6298,12 @@ static INT_PTR CALLBACK EditFindReplaceDlgProc(HWND hwnd,UINT umsg,WPARAM wParam
 
         if (!s_bSwitchedFindReplace) {
           // Save MRUs
-          if (StringCchLenA(sg_pefrData->szFind, COUNTOF(sg_pefrData->szFind))) {
+          if (!StrIsEmptyA(sg_pefrData->szFind)) {
             MultiByteToWideChar(Encoding_SciCP, 0, sg_pefrData->szFind, -1, s_tchBuf, (int)COUNTOF(s_tchBuf));
             MRU_Add(Globals.pMRUfind, s_tchBuf, 0, -1, -1, NULL);
             SetFindPattern(s_tchBuf);
           }
-          if (StringCchLenA(sg_pefrData->szReplace, COUNTOF(sg_pefrData->szReplace))) {
+          if (!StrIsEmptyA(sg_pefrData->szReplace)) {
             MultiByteToWideChar(Encoding_SciCP, 0, sg_pefrData->szReplace, -1, s_tchBuf, (int)COUNTOF(s_tchBuf));
             MRU_Add(Globals.pMRUreplace, s_tchBuf, 0, -1, -1, NULL);
           }
@@ -6426,29 +6469,29 @@ static INT_PTR CALLBACK EditFindReplaceDlgProc(HWND hwnd,UINT umsg,WPARAM wParam
         break;
 
       default:
-        return !0;
+        return TRUE;
       }
 
     } // WM_COMMAND:
-    return !0;
+    return TRUE;
 
 
     case WM_SYSCOMMAND:
       if (wParam == IDS_MUI_SAVEPOS) {
         PostWMCommand(hwnd, IDACC_SAVEPOS);
-        return !0;
+        return TRUE;
       }
       else if (wParam == IDS_MUI_RESETPOS) {
         PostWMCommand(hwnd, IDACC_RESETPOS);
-        return !0;
+        return TRUE;
       }
       else if (wParam == IDS_MUI_CLEAR_FIND_HISTORY) {
         PostWMCommand(hwnd, IDACC_CLEAR_FIND_HISTORY);
-        return !0;
+        return TRUE;
       }
       else if (wParam == IDS_MUI_CLEAR_REPL_HISTORY) {
         PostWMCommand(hwnd, IDACC_CLEAR_REPL_HISTORY);
-        return !0;
+        return TRUE;
       }
       break;
 
@@ -6522,6 +6565,9 @@ static INT_PTR CALLBACK EditFindReplaceDlgProc(HWND hwnd,UINT umsg,WPARAM wParam
             return hBrush;
           }
         }
+        if (UseDarkMode()) {
+          return SetDarkModeCtlColors((HDC)wParam);
+        }
       }
       return DefWindowProc(hwnd, umsg, wParam, lParam);
 
@@ -6530,7 +6576,7 @@ static INT_PTR CALLBACK EditFindReplaceDlgProc(HWND hwnd,UINT umsg,WPARAM wParam
 
   } // switch(umsg)
 
-  return 0; // message handled
+  return FALSE; // message handled
 }
 
 
@@ -6835,23 +6881,25 @@ void EditSelectionMultiSelectAllEx(EDITFINDREPLACE edFndRpl)
 //
 //  _GetReplaceString()
 //
-static char*  _GetReplaceString(HWND hwnd, LPCEDITFINDREPLACE lpefr, int* iReplaceMsg)
+static char* _GetReplaceString(HWND hwnd, LPCEDITFINDREPLACE lpefr, int* iReplaceMsg)
 {
   char* pszReplace = NULL; // replace text of arbitrary size
-  if (StringCchCompareNIA(lpefr->szReplace, FNDRPL_BUFFER, "^c", 2) == 0) {
+  if (StringCchCompareNIA(lpefr->szReplace, COUNTOF(lpefr->szReplace), "^c", 2) == 0) {
     *iReplaceMsg = SCI_REPLACETARGET;
     pszReplace = EditGetClipboardText(hwnd, true, NULL, NULL);
   }
   else {
-    size_t const size = StringCchLenA(lpefr->szReplace,0) + 1;
-    pszReplace = (char*)AllocMem(size, HEAP_ZERO_MEMORY);
-    StringCchCopyA(pszReplace, size, lpefr->szReplace);
-    bool const bIsRegEx = (lpefr->fuFlags & SCFIND_REGEXP);
-    if (lpefr->bTransformBS || bIsRegEx) {
-      TransformBackslashes(pszReplace, bIsRegEx, Encoding_SciCP, iReplaceMsg);
+    size_t const cch = StringCchLenA(lpefr->szReplace, COUNTOF(lpefr->szReplace));
+    pszReplace = (char*)AllocMem(cch + 1, HEAP_ZERO_MEMORY);
+    if (pszReplace) {
+      StringCchCopyA(pszReplace, SizeOfMem(pszReplace), lpefr->szReplace);
+      bool const bIsRegEx = (lpefr->fuFlags & SCFIND_REGEXP);
+      if (lpefr->bTransformBS || bIsRegEx) {
+        TransformBackslashes(pszReplace, bIsRegEx, Encoding_SciCP, iReplaceMsg);
+      }
     }
   }
-  return pszReplace;
+  return pszReplace; // move ownership
 }
 
 
@@ -6944,8 +6992,8 @@ int EditReplaceAllInRange(HWND hwnd, LPCEDITFINDREPLACE lpefr, DocPos iStartPos,
   if (iStartPos > iEndPos) { swapos(&iStartPos, &iEndPos); }
 
   char szFind[FNDRPL_BUFFER];
-  int const slen = _EditGetFindStrg(hwnd, lpefr, szFind, COUNTOF(szFind));
-  if (slen <= 0) { return 0; }
+  size_t const slen = _EditGetFindStrg(hwnd, lpefr, szFind, COUNTOF(szFind));
+  if (slen <= 0) { return FALSE; }
   int const sFlags = (int)(lpefr->fuFlags);
 
   // SCI_REPLACETARGET or SCI_REPLACETARGETRE
@@ -6988,7 +7036,7 @@ int EditReplaceAllInRange(HWND hwnd, LPCEDITFINDREPLACE lpefr, DocPos iStartPos,
   } 
   
   iCount = utarray_len(ReplPosUTArray);
-  if (iCount <= 0) { FreeMem(pszReplace); return 0; }
+  if (iCount <= 0) { FreeMem(pszReplace); return FALSE; }
 
   // ===  iterate over findings and replace strings  ===
   DocPos searchStart = iStartPos;
@@ -7135,7 +7183,6 @@ void EditClearAllBookMarks(HWND hwnd)
         // 1st press: clear all occurrences marker
         for (int m = MARKER_NP3_1; m < MARKER_NP3_BOOKMARK; ++m) {
             SciCall_MarkerDeleteAll(m);
-            WordBookMarks[m].in_use = false;
         }
     } else {
         // if no occurrences marker found
@@ -7540,8 +7587,8 @@ bool EditAutoCompleteWord(HWND hwnd, bool autoInsert)
       PWLIST pWLItem = NULL;
       LL_FOREACH_SAFE(pListHead, pWLItem, pTmp) {
         if (pWLItem->word[0]) {
-          StringCchCatA(pList, iWListSize, sep);
-          StringCchCatA(pList, iWListSize, pWLItem->word);
+          StringCchCatA(pList, SizeOfMem(pList), sep);
+          StringCchCatA(pList, SizeOfMem(pList), pWLItem->word);
         }
         LL_DELETE(pListHead, pWLItem);
         FreeMem(pWLItem);
@@ -7790,7 +7837,6 @@ void EditFoldMarkedLineRange(HWND hwnd, bool bHideLines)
                 SciCall_SetFoldLevel(line, SC_FOLDLEVELWHITEFLAG | level);
             }
         }
-
         SciCall_FoldAll(FOLD);
     }
 }
@@ -7805,15 +7851,14 @@ void EditBookMarkLineRange(HWND hwnd)
     UNUSED(hwnd);
     // get next free bookmark
     int marker;
-    for (marker = MARKER_NP3_1; marker < MARKER_NP3_BOOKMARK; ++marker) {
-        if (!WordBookMarks[marker].in_use) {
-            WordBookMarks[marker].in_use = true;
-            break;
-        }
+    for (marker = MARKER_NP3_1; marker < MARKER_NP3_BOOKMARK; ++marker) { // all(!)
+      if (SciCall_MarkerNext(0, (1 << marker)) < 0) {
+        break; // found unused
+      }
     }
-    if (marker >= MARKER_NP3_BOOKMARK) { // wrap around
-        marker = MARKER_NP3_1;
-        SciCall_MarkerDeleteAll(marker);
+    if (marker >= MARKER_NP3_BOOKMARK) {
+      InfoBoxLng(MB_ICONWARNING, L"OutOfOccurrenceMarkers", IDS_MUI_OUT_OFF_OCCMRK);
+      return;
     }
 
     DocLn line = -1;
@@ -7824,6 +7869,27 @@ void EditBookMarkLineRange(HWND hwnd)
             SciCall_MarkerAdd(line, marker);
         }
     } while (line >= 0);
+}
+
+
+//=============================================================================
+//
+//  EditDeleteMarkerInSelection()
+//
+void EditDeleteMarkerInSelection()
+{
+  if (Sci_IsStreamSelection() && !SciCall_IsSelectionEmpty())
+  {
+    DocPos const posSelBeg = SciCall_GetSelectionStart();
+    DocPos const posSelEnd = SciCall_GetSelectionEnd();
+    DocLn const lnBeg = SciCall_LineFromPosition(posSelBeg);
+    DocLn const lnEnd = SciCall_LineFromPosition(posSelEnd);
+    DocLn const lnDelBeg = (posSelBeg <= SciCall_PositionFromLine(lnBeg)) ? lnBeg : lnBeg + 1;
+    DocLn const lnDelEnd = (posSelEnd  > SciCall_GetLineEndPosition(lnEnd)) ? lnEnd : lnEnd - 1;
+    for (DocLn ln = lnDelBeg; ln <= lnDelEnd; ++ln) {
+      SciCall_MarkerDelete(ln, -1);
+    }
+  }
 }
 
 
@@ -7892,16 +7958,24 @@ static INT_PTR CALLBACK EditLinenumDlgProc(HWND hwnd,UINT umsg,WPARAM wParam,LPA
   {
     case WM_INITDIALOG:
       {
-        WCHAR wchLineCaption[96];
-        WCHAR wchColumnCaption[96];
-
         SetDialogIconNP3(hwnd);
+        InitWindowCommon(hwnd, true);
+
+#ifdef D_NP3_WIN10_DARK_MODE
+        if (UseDarkMode()) {
+          SetExplorerTheme(GetDlgItem(hwnd, IDOK));
+          SetExplorerTheme(GetDlgItem(hwnd, IDCANCEL));
+          //SetExplorerTheme(GetDlgItem(hwnd, IDC_RESIZEGRIP));
+        }
+#endif
 
         DocLn const iCurLine = SciCall_LineFromPosition(SciCall_GetCurrentPos())+1;
         DocLn const iMaxLnNum = SciCall_GetLineCount();
         DocPos const iCurColumn = SciCall_GetColumn(SciCall_GetCurrentPos()) + 1;
         DocPos const iLineEndPos = Sci_GetNetLineLength(iCurLine);
 
+        WCHAR wchLineCaption[96];
+        WCHAR wchColumnCaption[96];
         FormatLngStringW(wchLineCaption, COUNTOF(wchLineCaption), IDS_MUI_GOTO_LINE, 
           (int)clampp(iMaxLnNum, 0, INT_MAX));
         FormatLngStringW(wchColumnCaption, COUNTOF(wchColumnCaption), IDS_MUI_GOTO_COLUMN, 
@@ -7926,6 +8000,41 @@ static INT_PTR CALLBACK EditLinenumDlgProc(HWND hwnd,UINT umsg,WPARAM wParam,LPA
         UpdateWindowLayoutForDPI(hwnd, (RECT*)lParam, &dpi);
       }
       return true;
+
+
+#ifdef D_NP3_WIN10_DARK_MODE
+
+      case WM_CTLCOLORDLG:
+      case WM_CTLCOLOREDIT:
+      case WM_CTLCOLORSTATIC: {
+        if (UseDarkMode()) {
+          return SetDarkModeCtlColors((HDC)wParam);
+        }
+      } break;
+
+      case WM_SETTINGCHANGE:
+        if (IsDarkModeSupported() && IsColorSchemeChangeMessage(lParam)) {
+          SendMessage(hwnd, WM_THEMECHANGED, 0, 0);
+        }
+        break;
+
+      case WM_THEMECHANGED:
+        if (IsDarkModeSupported()) {
+          bool const darkModeEnabled = CheckDarkModeEnabled();
+          AllowDarkModeForWindow(hwnd, darkModeEnabled);
+          RefreshTitleBarThemeColor(hwnd);
+
+        int const buttons[] = { IDOK, IDCANCEL };
+          for (int id = 0; id < COUNTOF(buttons); ++id) {
+            HWND const hBtn = GetDlgItem(hwnd, buttons[id]);
+            AllowDarkModeForWindow(hBtn, darkModeEnabled);
+            SendMessage(hBtn, WM_THEMECHANGED, 0, 0);
+          }
+          UpdateWindow(hwnd);
+        }
+        break;
+
+#endif
 
 
     case WM_COMMAND:
@@ -8044,6 +8153,15 @@ static INT_PTR CALLBACK EditModifyLinesDlgProc(HWND hwnd,UINT umsg,WPARAM wParam
         id_capture = 0;
 
         SetDialogIconNP3(hwnd);
+        InitWindowCommon(hwnd, true);
+
+#ifdef D_NP3_WIN10_DARK_MODE
+        if (UseDarkMode()) {
+          SetExplorerTheme(GetDlgItem(hwnd, IDOK));
+          SetExplorerTheme(GetDlgItem(hwnd, IDCANCEL));
+          //SetExplorerTheme(GetDlgItem(hwnd, IDC_RESIZEGRIP));
+        }
+#endif
 
         HFONT const hFont = (HFONT)SendDlgItemMessage(hwnd, 200, WM_GETFONT, 0, 0);
         if (hFont) {
@@ -8091,12 +8209,12 @@ static INT_PTR CALLBACK EditModifyLinesDlgProc(HWND hwnd,UINT umsg,WPARAM wParam
 
         UpdateWindowLayoutForDPI(hwnd, (RECT*)lParam, &dpi);
       }
-      return !0;
+      return TRUE;
 
     case WM_DESTROY:
       //DeleteObject(hFontNormal);
       DeleteObject(hFontHover);
-      return 0;
+      return FALSE;
 
     case WM_NCACTIVATE:
       if (!(bool)wParam) {
@@ -8106,27 +8224,55 @@ static INT_PTR CALLBACK EditModifyLinesDlgProc(HWND hwnd,UINT umsg,WPARAM wParam
           id_capture = 0;
         }
       }
-      return 0;
+      return FALSE;
 
+#ifdef D_NP3_WIN10_DARK_MODE
+
+    case WM_CTLCOLORDLG:
+    case WM_CTLCOLOREDIT:
     case WM_CTLCOLORSTATIC:
       {
-        DWORD dwId = GetWindowLong((HWND)lParam,GWL_ID);
-        HDC hdc = (HDC)wParam;
-
+        DWORD const dwId = GetWindowLong((HWND)lParam, GWL_ID);
+        HDC const hdc = (HDC)wParam;
+        INT_PTR const hbrReturn = UseDarkMode() ? SetDarkModeCtlColors(hdc) : 
+                                                  (INT_PTR)GetSysColorBrush(COLOR_BTNFACE);
         if (dwId >= 200 && dwId <= 205) {
-          SetBkMode(hdc,TRANSPARENT);
+          SetBkMode(hdc, TRANSPARENT);
           if (GetSysColorBrush(COLOR_HOTLIGHT)) {
             SetTextColor(hdc, GetSysColor(COLOR_HOTLIGHT));
-          }
-          else {
+          } else {
             SetTextColor(hdc, RGB(0, 0, 0xFF));
           }
           //SelectObject(hdc, (dwId == id_hover) ? hFontHover : hFontNormal);
           SelectObject(hdc, hFontHover);
-          return (INT_PTR)GetSysColorBrush(COLOR_BTNFACE);
         }
+        return hbrReturn;
+    } 
+      break;
+
+    case WM_SETTINGCHANGE:
+      if (IsDarkModeSupported() && IsColorSchemeChangeMessage(lParam)) {
+        SendMessage(hwnd, WM_THEMECHANGED, 0, 0);
       }
       break;
+
+    case WM_THEMECHANGED:
+      if (IsDarkModeSupported()) {
+        bool const darkModeEnabled = CheckDarkModeEnabled();
+        AllowDarkModeForWindow(hwnd, darkModeEnabled);
+        RefreshTitleBarThemeColor(hwnd);
+
+        int const buttons[] = { IDOK, IDCANCEL };
+        for (int id = 0; id < COUNTOF(buttons); ++id) {
+          HWND const hBtn = GetDlgItem(hwnd, buttons[id]);
+          AllowDarkModeForWindow(hBtn, darkModeEnabled);
+          SendMessage(hBtn, WM_THEMECHANGED, 0, 0);
+        }
+        UpdateWindow(hwnd);
+      }
+      break;
+
+#endif
 
     case WM_MOUSEMOVE:
       {
@@ -8216,9 +8362,9 @@ static INT_PTR CALLBACK EditModifyLinesDlgProc(HWND hwnd,UINT umsg,WPARAM wParam
           EndDialog(hwnd,IDCANCEL);
           break;
       }
-      return !0;
+      return TRUE;
   }
-  return 0;
+  return FALSE;
 }
 
 
@@ -8264,6 +8410,15 @@ static INT_PTR CALLBACK EditAlignDlgProc(HWND hwnd,UINT umsg,WPARAM wParam,LPARA
       {
         piAlignMode = (int*)lParam;
         SetDialogIconNP3(hwnd);
+        InitWindowCommon(hwnd, true);
+
+#ifdef D_NP3_WIN10_DARK_MODE
+        if (UseDarkMode()) {
+          SetExplorerTheme(GetDlgItem(hwnd, IDOK));
+          SetExplorerTheme(GetDlgItem(hwnd, IDCANCEL));
+          //SetExplorerTheme(GetDlgItem(hwnd, IDC_RESIZEGRIP));
+        }
+#endif
         CheckRadioButton(hwnd,100,104,*piAlignMode+100);
         CenterDlgInParent(hwnd, NULL);
       }
@@ -8272,6 +8427,41 @@ static INT_PTR CALLBACK EditAlignDlgProc(HWND hwnd,UINT umsg,WPARAM wParam,LPARA
     case WM_DPICHANGED:
       UpdateWindowLayoutForDPI(hwnd, (RECT*)lParam, NULL);
       return true;
+
+#ifdef D_NP3_WIN10_DARK_MODE
+
+    case WM_CTLCOLORDLG:
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORSTATIC: {
+
+      if (UseDarkMode()) {
+        return SetDarkModeCtlColors((HDC)wParam);
+      }
+    } break;
+
+    case WM_SETTINGCHANGE:
+      if (IsDarkModeSupported() && IsColorSchemeChangeMessage(lParam)) {
+        SendMessage(hwnd, WM_THEMECHANGED, 0, 0);
+      }
+      break;
+
+    case WM_THEMECHANGED:
+      if (IsDarkModeSupported()) {
+        bool const darkModeEnabled = CheckDarkModeEnabled();
+        AllowDarkModeForWindow(hwnd, darkModeEnabled);
+        RefreshTitleBarThemeColor(hwnd);
+
+        int const buttons[] = { IDOK, IDCANCEL };
+        for (int id = 0; id < COUNTOF(buttons); ++id) {
+          HWND const hBtn = GetDlgItem(hwnd, buttons[id]);
+          AllowDarkModeForWindow(hBtn, darkModeEnabled);
+          SendMessage(hBtn, WM_THEMECHANGED, 0, 0);
+        }
+        UpdateWindow(hwnd);
+      }
+      break;
+
+#endif
 
     case WM_COMMAND:
       switch(LOWORD(wParam))
@@ -8345,17 +8535,61 @@ static INT_PTR CALLBACK EditEncloseSelectionDlgProc(HWND hwnd,UINT umsg,WPARAM w
       {
         pdata = (PENCLOSESELDATA)lParam;
         SetDialogIconNP3(hwnd);
-        SendDlgItemMessage(hwnd,100,EM_LIMITTEXT,255,0);
+        InitWindowCommon(hwnd, true);
+
+#ifdef D_NP3_WIN10_DARK_MODE
+        if (UseDarkMode()) {
+          SetExplorerTheme(GetDlgItem(hwnd, IDOK));
+          SetExplorerTheme(GetDlgItem(hwnd, IDCANCEL));
+          //SetExplorerTheme(GetDlgItem(hwnd, IDC_RESIZEGRIP));
+        }
+#endif
+        SendDlgItemMessage(hwnd, 100, EM_LIMITTEXT, 255, 0);
         SetDlgItemTextW(hwnd,100,pdata->pwsz1);
         SendDlgItemMessage(hwnd,101,EM_LIMITTEXT,255,0);
         SetDlgItemTextW(hwnd,101,pdata->pwsz2);
         CenterDlgInParent(hwnd, NULL);
       }
-      return true;
+      return TRUE;
 
     case WM_DPICHANGED:
       UpdateWindowLayoutForDPI(hwnd, (RECT*)lParam, NULL);
-      return true;
+      return TRUE;
+
+#ifdef D_NP3_WIN10_DARK_MODE
+
+    case WM_CTLCOLORDLG:
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORSTATIC: {
+
+      if (UseDarkMode()) {
+        return SetDarkModeCtlColors((HDC)wParam);
+      }
+    } break;
+
+    case WM_SETTINGCHANGE:
+      if (IsDarkModeSupported() && IsColorSchemeChangeMessage(lParam)) {
+        SendMessage(hwnd, WM_THEMECHANGED, 0, 0);
+      }
+      break;
+
+    case WM_THEMECHANGED:
+      if (IsDarkModeSupported()) {
+        bool const darkModeEnabled = CheckDarkModeEnabled();
+        AllowDarkModeForWindow(hwnd, darkModeEnabled);
+        RefreshTitleBarThemeColor(hwnd);
+
+        int const buttons[] = { IDOK, IDCANCEL };
+        for (int id = 0; id < COUNTOF(buttons); ++id) {
+          HWND const hBtn = GetDlgItem(hwnd, buttons[id]);
+          AllowDarkModeForWindow(hBtn, darkModeEnabled);
+          SendMessage(hBtn, WM_THEMECHANGED, 0, 0);
+        }
+        UpdateWindow(hwnd);
+      }
+      break;
+
+#endif
 
     case WM_COMMAND:
       switch(LOWORD(wParam))
@@ -8370,9 +8604,9 @@ static INT_PTR CALLBACK EditEncloseSelectionDlgProc(HWND hwnd,UINT umsg,WPARAM w
           EndDialog(hwnd,IDCANCEL);
           break;
       }
-      return true;
+      return TRUE;
   }
-  return false;
+  return FALSE;
 }
 
 
@@ -8426,7 +8660,18 @@ static INT_PTR CALLBACK EditInsertTagDlgProc(HWND hwnd,UINT umsg,WPARAM wParam,L
       {
         pdata = (PTAGSDATA)lParam;
         SetDialogIconNP3(hwnd);
-        if (!wchOpenTagStrg[0]) { StringCchCopy(wchOpenTagStrg, COUNTOF(wchOpenTagStrg), L"<tag>"); }
+        InitWindowCommon(hwnd, true);
+
+#ifdef D_NP3_WIN10_DARK_MODE
+        if (UseDarkMode()) {
+          SetExplorerTheme(GetDlgItem(hwnd, IDOK));
+          SetExplorerTheme(GetDlgItem(hwnd, IDCANCEL));
+          //SetExplorerTheme(GetDlgItem(hwnd, IDC_RESIZEGRIP));
+        }
+#endif
+        if (!wchOpenTagStrg[0]) {
+          StringCchCopy(wchOpenTagStrg, COUNTOF(wchOpenTagStrg), L"<tag>");
+        }
         if (!wchCloseTagStrg[0]) { StringCchCopy(wchCloseTagStrg, COUNTOF(wchCloseTagStrg), L"</tag>"); }
         SendDlgItemMessage(hwnd,100,EM_LIMITTEXT, COUNTOF(wchOpenTagStrg)-1,0);
         SetDlgItemTextW(hwnd,100, wchOpenTagStrg);
@@ -8443,6 +8688,41 @@ static INT_PTR CALLBACK EditInsertTagDlgProc(HWND hwnd,UINT umsg,WPARAM wParam,L
     case WM_DPICHANGED:
       UpdateWindowLayoutForDPI(hwnd, (RECT*)lParam, NULL);
       return true;
+
+#ifdef D_NP3_WIN10_DARK_MODE
+
+    case WM_CTLCOLORDLG:
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORSTATIC: {
+
+      if (UseDarkMode()) {
+        return SetDarkModeCtlColors((HDC)wParam);
+      }
+    } break;
+
+    case WM_SETTINGCHANGE:
+      if (IsDarkModeSupported() && IsColorSchemeChangeMessage(lParam)) {
+        SendMessage(hwnd, WM_THEMECHANGED, 0, 0);
+      }
+      break;
+
+    case WM_THEMECHANGED:
+      if (IsDarkModeSupported()) {
+        bool const darkModeEnabled = CheckDarkModeEnabled();
+        AllowDarkModeForWindow(hwnd, darkModeEnabled);
+        RefreshTitleBarThemeColor(hwnd);
+
+        int const buttons[] = { IDOK, IDCANCEL };
+        for (int id = 0; id < COUNTOF(buttons); ++id) {
+          HWND const hBtn = GetDlgItem(hwnd, buttons[id]);
+          AllowDarkModeForWindow(hBtn, darkModeEnabled);
+          SendMessage(hBtn, WM_THEMECHANGED, 0, 0);
+        }
+        UpdateWindow(hwnd);
+      }
+      break;
+
+#endif
 
     case WM_COMMAND:
       switch(LOWORD(wParam))
@@ -8569,6 +8849,21 @@ static INT_PTR CALLBACK EditSortDlgProc(HWND hwnd,UINT umsg,WPARAM wParam,LPARAM
         }
 
         SetDialogIconNP3(hwnd);
+        InitWindowCommon(hwnd, true);
+
+#ifdef D_NP3_WIN10_DARK_MODE
+        if (UseDarkMode()) {
+          SetExplorerTheme(GetDlgItem(hwnd, IDOK));
+          SetExplorerTheme(GetDlgItem(hwnd, IDCANCEL));
+          //~SetExplorerTheme(GetDlgItem(hwnd, 100));
+          //~SetExplorerTheme(GetDlgItem(hwnd, 101));
+          //~SetExplorerTheme(GetDlgItem(hwnd, 102));
+          //~SetExplorerTheme(GetDlgItem(hwnd, 103));
+          //~SetExplorerTheme(GetDlgItem(hwnd, 104));
+          //~SetExplorerTheme(GetDlgItem(hwnd, 105));
+          //SetExplorerTheme(GetDlgItem(hwnd, IDC_RESIZEGRIP));
+        }
+#endif
 
         if (*piSortFlags & SORT_DESCENDING) {
           CheckRadioButton(hwnd, 100, 102, 101);
@@ -8633,6 +8928,54 @@ static INT_PTR CALLBACK EditSortDlgProc(HWND hwnd,UINT umsg,WPARAM wParam,LPARAM
     case WM_DPICHANGED:
       UpdateWindowLayoutForDPI(hwnd, (RECT*)lParam, NULL);
       return true;
+
+#ifdef D_NP3_WIN10_DARK_MODE
+
+    //case WM_DRAWITEM: {
+    //  // needs .rc: BS_OWNERDRAW flag
+    //  const DRAWITEMSTRUCT *const pDIS = (const DRAWITEMSTRUCT *const)lParam;
+    //  UINT const ctl[] = { 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112 };
+    //  UINT const ctlId = pDIS->CtlID;
+    //  for (UINT i = 0; i < COUNTOF(ctl); ++i) {
+    //    if (ctl[i] == ctlId)
+    //      return OwnerDrawTextItem(hwnd, wParam, lParam);
+    //  }
+    //  return FALSE;
+    //}
+
+    //case WM_CTLCOLORBTN:(BS_OWNERDRAW)
+
+    case WM_CTLCOLORDLG:
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORSTATIC: {
+      if (UseDarkMode()) {
+        return SetDarkModeCtlColors((HDC)wParam);
+      }
+    } break;
+
+    case WM_SETTINGCHANGE:
+      if (IsDarkModeSupported() && IsColorSchemeChangeMessage(lParam)) {
+        SendMessage(hwnd, WM_THEMECHANGED, 0, 0);
+      }
+      break;
+
+    case WM_THEMECHANGED:
+      if (IsDarkModeSupported()) {
+        bool const darkModeEnabled = CheckDarkModeEnabled();
+        AllowDarkModeForWindow(hwnd, darkModeEnabled);
+        RefreshTitleBarThemeColor(hwnd);
+
+        int const buttons[] = { IDOK, IDCANCEL/*, 100, 101, 102, 103, 104, 105*/ };
+        for (int id = 0; id < COUNTOF(buttons); ++id) {
+          HWND const hBtn = GetDlgItem(hwnd, buttons[id]);
+          AllowDarkModeForWindow(hBtn, darkModeEnabled);
+          SendMessage(hBtn, WM_THEMECHANGED, 0, 0);
+        }
+        UpdateWindow(hwnd);
+      }
+      break;
+
+#endif
 
     case WM_COMMAND:
       switch(LOWORD(wParam))
@@ -8898,7 +9241,6 @@ void EditBookmarkToggle(HWND hwnd, const DocLn ln, const int modifiers) {
     for (int m = MARKER_NP3_1; m < MARKER_NP3_BOOKMARK; ++m) {
       if (bitmask & (1 << m)) {
         SciCall_MarkerDeleteAll(m);
-        WordBookMarks[m].in_use = false;
       }
     }
   }

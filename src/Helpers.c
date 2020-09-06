@@ -143,6 +143,8 @@ WCHAR* StrNextTokW(WCHAR* strg, const WCHAR* tokens)
 //
 //  GetWinVersionString()
 //
+
+#if 0
 static OSVERSIONINFOEX s_OSversion = { 0 };
 
 static void _GetTrueWindowsVersion()
@@ -179,7 +181,7 @@ static void _GetTrueWindowsVersion()
 
 }
 // ----------------------------------------------------------------------------
-
+#endif
 
 // ----------------------------------------------------------------------------
 // https://docs.microsoft.com/en-us/windows/release-information/
@@ -241,10 +243,9 @@ void GetWinVersionString(LPWSTR szVersionStr, size_t cchVersionStr)
   }
   
   if (IsWindows10OrGreater()) {
-    _GetTrueWindowsVersion();
-    DWORD const build = s_OSversion.dwBuildNumber;
     WCHAR win10ver[80] = { L'\0' };
-    StringCchPrintf(win10ver, COUNTOF(win10ver), L" Version %i (Build %i)", _Win10BuildToReleaseId(build) , build);
+    StringCchPrintf(win10ver, COUNTOF(win10ver), L" Version %i (Build %i)",
+                    _Win10BuildToReleaseId(Globals.WindowsBuildNumber), Globals.WindowsBuildNumber);
     StringCchCat(szVersionStr, cchVersionStr, win10ver);
   }
 }
@@ -1605,7 +1606,7 @@ UINT CharSetFromCodePage(const UINT uCodePage) {
  * This is used to get control characters into the regular expresion engine
  * w/o interfering with group referencing ('\0').
  */
-unsigned int UnSlashLowOctal(char* s) {
+ptrdiff_t UnSlashLowOctal(char* s) {
   char* sStart = s;
   char* o = s;
   while (*s) {
@@ -1624,7 +1625,7 @@ unsigned int UnSlashLowOctal(char* s) {
       ++s;
   }
   *o = '\0';
-  return (unsigned int)(o - sStart);
+  return (ptrdiff_t)(o - sStart);
 }
 
 
@@ -2369,7 +2370,7 @@ void UrlUnescapeEx(LPWSTR lpURL, LPWSTR lpUnescaped, DWORD* pcchUnescaped)
   UrlUnescape(lpURL, lpUnescaped, pcchUnescaped, URL_UNESCAPE_AS_UTF8);
 #else
   char* outBuffer = AllocMem(*pcchUnescaped + 1, HEAP_ZERO_MEMORY);
-  if (outBuffer == NULL) {
+  if (!outBuffer) {
     return;
   }
   DWORD const outLen = *pcchUnescaped;
