@@ -409,7 +409,7 @@ void ObserveNotifyChangeEvent()
   }
   if (CheckNotifyChangeEvent()) {
     EditUpdateVisibleIndicators();
-    UpdateToolbar();
+    //@@@ §§§ UpdateToolbar();
     UpdateStatusbar(false);
   }
 }
@@ -575,12 +575,16 @@ static void SetSaveNeeded()
     }
   }
   s_DocNeedSaving = true;
+  UpdateToolbar();
+  UpdateTitleBar();
 }
 
 void SetSavePoint()
 {
   s_DocNeedSaving = false;
   if (SciCall_GetModify()) { SciCall_SetSavePoint(); }
+  UpdateToolbar();
+  UpdateTitleBar();
 }
 
 //==============================================================================
@@ -596,10 +600,6 @@ static void _InitGlobals()
   ZeroMemory(&Flags, sizeof(FLAGS_T));
 
   ZeroMemory(&(Globals.fvCurFile), sizeof(FILEVARS));
-
-#ifdef D_NP3_WIN10_DARK_MODE
-  InitDarkMode();
-#endif
 
   Globals.WindowsBuildNumber = GetWindowsBuildNumber(NULL, NULL);
 
@@ -858,6 +858,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
   }
   LoadSettings();
 
+  InitDarkMode(true); // try
+
   // set AppUserModelID
   PrivateSetCurrentProcessExplicitAppUserModelID(Settings2.AppUserModelID);
 
@@ -988,6 +990,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
     _CleanUpResources(NULL, false);
     return 1; 
   }
+
+  InitDarkMode(IsDarkModeSupported() && Settings.WinThemeDarkMode); // settings
 
   HWND const hwnd = InitInstance(Globals.hInstance, lpCmdLine, nShowCmd);
   if (!hwnd) { 
@@ -1676,7 +1680,6 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT umsg, WPARAM wParam, LPARAM lParam)
 #ifdef D_NP3_WIN10_DARK_MODE
 	  case WM_SETTINGCHANGE: {
       if (IsColorSchemeChangeMessage(lParam)) {
-        CheckDarkModeEnabled();
         RefreshTitleBarThemeColor(hwnd);
         SendMessage(Globals.hwndEdit, WM_THEMECHANGED, 0, 0);
       }
@@ -2629,7 +2632,7 @@ void CreateBars(HWND hwnd, HINSTANCE hInstance)
   // -------------------
   // Create Statusbar 
   // -------------------
-  DWORD const dwStatusbarStyle = Settings.ShowStatusbar ? (WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE) : (WS_CHILD | WS_CLIPSIBLINGS);
+  DWORD const dwStatusbarStyle = SBT_NOBORDERS | Settings.ShowStatusbar ? (WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE) : (WS_CHILD | WS_CLIPSIBLINGS);
 
   if (Globals.hwndStatus) { DestroyWindow(Globals.hwndStatus); }
 
@@ -2649,25 +2652,10 @@ void CreateBars(HWND hwnd, HINSTANCE hInstance)
   InitWindowCommon(Globals.hwndStatus, true);
 
 #ifdef D_NP3_WIN10_DARK_MODE
-
   if (IsDarkModeSupported()) {
     AllowDarkModeForWindow(Globals.hwndStatus, CheckDarkModeEnabled());
   }
-
-  //if (UseDarkMode())
-  //{
-  //  RECT rcSB;
-  //  HDC const hdc = GetWindowDC(Globals.hwndStatus);
-  //  GetWindowRect(Globals.hwndStatus, &rcSB);
-  //  SetMapMode(hdc, MM_ANISOTROPIC); 
-  //  SetWindowExtEx(hdc, 100, 100, NULL);
-  //  SetViewportExtEx(hdc, rcSB.right, rcSB.bottom, NULL);
-  //  FillRect(hdc, &rcSB, g_hbrWndDarkBgrBrush);
-  //  ReleaseDC(Globals.hwndStatus, hdc);
-  //}
-
 #endif
-
 }
 
 
@@ -2761,7 +2749,6 @@ LRESULT MsgThemeChanged(HWND hwnd, WPARAM wParam ,LPARAM lParam)
   RECT rc, rc2;
 
   // reinitialize edit frame
-
   if (IsAppThemed()) {
     s_bIsAppThemed = true;
 
@@ -2812,11 +2799,16 @@ LRESULT MsgThemeChanged(HWND hwnd, WPARAM wParam ,LPARAM lParam)
 
   EditUpdateVisibleIndicators();
 
+#ifdef D_NP3_WIN10_DARK_MODE
+  AllowDarkModeForWindow(hwnd, UseDarkMode());
+  RefreshTitleBarThemeColor(hwnd);
+#endif
+
   UpdateUI();
   UpdateToolbar();
   UpdateStatusbar(true);
   UpdateMarginWidth();
-  EditUpdateVisibleIndicators();
+  UpdateTitleBar();
 
   return FALSE;
 }
@@ -2902,31 +2894,48 @@ LRESULT MsgDrawItem(HWND hwnd, WPARAM wParam, LPARAM lParam)
   {
     const DRAWITEMSTRUCT* const pDIS = (const DRAWITEMSTRUCT* const)lParam;
 
-    //UINT const ctlId = pDIS->CtlID;
-    //int const partId = (int)pDIS->itemID;
-    //int const stateId = (int)pDIS->itemState;
+    HDC const hdc = pDIS->hDC;
+    RECT const rc = pDIS->rcItem;
+
+    //UINT const ctlId = pDIS->CtlID; // child window identifier
+    //~int const partId = (int)pDIS->itemID ~ don't use
+    //~int const stateId = (int)pDIS->itemState ~ don't use
 
     //~PAINTSTRUCT ps;
-    //~HWND const hWndItem = pDIS->hwndItem;
     //~BeginPaint(hWndItem, &ps); ~ not needed on WM_DRAWITEM
 
-    HDC const hdc = pDIS->hDC;
-
 #ifdef D_NP3_WIN10_DARK_MODE
-    //HTHEME const hTheme = OpenThemeData(hWndItem, L"BUTTON");
-    //if (hTheme) {
-      SetBkColor(hdc, UseDarkMode() ? g_rgbDarkBkgColor : GetSysColor(COLOR_BTNFACE));
-      //DrawEdge(hdc, &rc, EDGE_RAISED, BF_RECT);
-      //DrawThemeEdge(hTheme, hdc, partId, stateId, &rc, EDGE_RAISED, BF_RECT, NULL);
-      SetTextColor(hdc, UseDarkMode() ? g_rgbDarkTextColor : GetSysColor(COLOR_BTNTEXT));
-    //  CloseThemeData(hTheme);
-    //}
-#else
-    SetBkColor(hdc, GetSysColor(COLOR_BTNFACE));
-    SetTextColor(hdc, GetSysColor(COLOR_BTNTEXT));
+
+    HWND const hWndItem = pDIS->hwndItem;
+
+    if (UseDarkMode())
+    {
+      // overpaint part frames
+      HDC const hdcFrm = GetWindowDC(hWndItem);
+      RECT rcf = rc;
+      rcf.left -= 1;
+      rcf.top -= 1;
+      FrameRect(hdcFrm, &rcf, g_hbrWndDarkBkgBrush);
+      rcf.left -= 1;
+      rcf.top -= 1;
+      rcf.bottom += 1;
+      rcf.right += 1;
+      FrameRect(hdcFrm, &rcf, g_hbrWndDarkBkgBrush);
+      rcf.left -= 1;
+      rcf.top -= 1;
+      FrameRect(hdcFrm, &rcf, g_hbrWndDarkBkgBrush);
+      ReleaseDC(hWndItem, hdcFrm);
+
+      SetBkColor(hdc, g_rgbDarkBkgColor);
+      SetTextColor(hdc, g_rgbDarkTextColor);
+    } 
+    else {
+      SetBkColor(hdc, GetSysColor(COLOR_BTNFACE));
+      SetTextColor(hdc, GetSysColor(COLOR_BTNTEXT));
+    }
+
 #endif
 
-    RECT rc = pDIS->rcItem;
     LPCWSTR const text = (LPCWSTR)(pDIS->itemData);
     ExtTextOut(hdc, rc.left + 2, rc.top + 2, ETO_OPAQUE | ETO_NUMERICSLOCAL, &rc, text, lstrlen(text), NULL);
 
@@ -3698,7 +3707,14 @@ LRESULT MsgInitMenu(HWND hwnd, WPARAM wParam, LPARAM lParam)
   CheckMenuRadioItem(hmenu, IDM_VIEW_HILITCURLN_NONE, IDM_VIEW_HILITCURLN_FRAME, i, MF_BYCOMMAND);
   CheckCmdPos(GetSubMenu(GetMenu(Globals.hwndMain), 2), 12, (i != IDM_VIEW_HILITCURLN_NONE));
 
+  EnableCmd(hmenu, IDM_VIEW_WIN_DARK_MODE, IsDarkModeSupported());
+  CheckCmd(hmenu, IDM_VIEW_WIN_DARK_MODE, Settings.WinThemeDarkMode);
+
   // --------------------------------------------------------------------------
+
+  int const mnuMain = 2;
+  int const mnuSubOcc = 13;
+  int const mnuSubSubWord = 6;
 
   if (Settings.MarkOccurrencesMatchWholeWords) {
     i = IDM_VIEW_MARKOCCUR_WORD;
@@ -3710,7 +3726,7 @@ LRESULT MsgInitMenu(HWND hwnd, WPARAM wParam, LPARAM lParam)
     i = IDM_VIEW_MARKOCCUR_WNONE;
   }
   CheckMenuRadioItem(hmenu, IDM_VIEW_MARKOCCUR_WNONE, IDM_VIEW_MARKOCCUR_CURRENT, i, MF_BYCOMMAND);
-  CheckCmdPos(GetSubMenu(GetSubMenu(GetMenu(Globals.hwndMain), 2), 13), 5, (i != IDM_VIEW_MARKOCCUR_WNONE));
+  CheckCmdPos(GetSubMenu(GetSubMenu(GetMenu(Globals.hwndMain), mnuMain), mnuSubOcc), mnuSubSubWord, (i != IDM_VIEW_MARKOCCUR_WNONE));
   
   i = IsMarkOccurrencesEnabled();
   EnableCmd(hmenu, IDM_VIEW_MARKOCCUR_VISIBLE, i);
@@ -3718,8 +3734,8 @@ LRESULT MsgInitMenu(HWND hwnd, WPARAM wParam, LPARAM lParam)
   EnableCmd(hmenu, IDM_VIEW_MARKOCCUR_WNONE, i);
   EnableCmd(hmenu, IDM_VIEW_MARKOCCUR_WORD, i);
   EnableCmd(hmenu, IDM_VIEW_MARKOCCUR_CURRENT, i);
-  EnableCmdPos(GetSubMenu(GetSubMenu(GetMenu(Globals.hwndMain), 2), 13), 5, i);
-  CheckCmdPos(GetSubMenu(GetMenu(Globals.hwndMain), 2), 13, i);
+  EnableCmdPos(GetSubMenu(GetSubMenu(GetMenu(Globals.hwndMain), mnuMain), mnuSubOcc), mnuSubSubWord, i);
+  CheckCmdPos(GetSubMenu(GetMenu(Globals.hwndMain), mnuMain), mnuSubOcc, i);
 
   // --------------------------------------------------------------------------
 
@@ -5840,6 +5856,16 @@ LRESULT MsgCommand(HWND hwnd, UINT umsg, WPARAM wParam, LPARAM lParam)
       }
       break;
 
+    case IDM_VIEW_WIN_DARK_MODE:
+      Settings.WinThemeDarkMode = !Settings.WinThemeDarkMode;
+      InitDarkMode(Settings.WinThemeDarkMode);
+      SciCall_SetHScrollbar(false);
+      SciCall_SetHScrollbar(true);
+      SciCall_SetVScrollbar(false);
+      SciCall_SetVScrollbar(true);
+      PostMessage(hwnd, WM_THEMECHANGED, 0, 0);
+      break;
+
     case IDM_VIEW_MUTE_MESSAGEBEEP:
       Settings.MuteMessageBeep = !Settings.MuteMessageBeep;
       break;
@@ -5858,11 +5884,13 @@ LRESULT MsgCommand(HWND hwnd, UINT umsg, WPARAM wParam, LPARAM lParam)
     case IDM_VIEW_SHOWFULLPATH:
       Settings.PathNameFormat = iLoWParam - IDM_VIEW_SHOWFILENAMEONLY;
       StringCchCopy(s_wchTitleExcerpt,COUNTOF(s_wchTitleExcerpt),L"");
+      UpdateTitleBar();
       break;
 
 
     case IDM_VIEW_SHOWEXCERPT:
       EditGetExcerpt(Globals.hwndEdit,s_wchTitleExcerpt,COUNTOF(s_wchTitleExcerpt));
+      UpdateTitleBar();
       break;
 
 
@@ -6401,6 +6429,7 @@ LRESULT MsgCommand(HWND hwnd, UINT umsg, WPARAM wParam, LPARAM lParam)
 
     case CMD_TOGGLETITLE:
       EditGetExcerpt(Globals.hwndEdit,s_wchTitleExcerpt,COUNTOF(s_wchTitleExcerpt));
+      UpdateTitleBar();
       break;
 
 
@@ -7577,16 +7606,18 @@ static LRESULT _MsgNotifyFromEdit(HWND hwnd, const LPNMHDR pnmh, const SCNotific
               MarkAllOccurrences(Settings2.UpdateDelayMarkAllOccurrences, true);
             }
             else {
-              EditClearAllOccurrenceMarkers(Globals.hwndEdit);
+              if (Globals.iMarkOccurrencesCount > 0) {
+                EditClearAllOccurrenceMarkers(Globals.hwndEdit);
+              }
             }
           }
         }
-        //~else if (iUpd & SC_UPDATE_CONTENT) {
+        //~if (iUpd & SC_UPDATE_CONTENT) {
           //~ ignoring SC_UPDATE_CONTENT cause Style and Marker are out of scope here
           //~ using WM_COMMAND -> SCEN_CHANGE  instead!
           //~~~MarkAllOccurrences(Settings2.UpdateDelayMarkAllCoccurrences, false);
           //~~~EditUpdateVisibleIndicators(); // will lead to recursion
-        //}
+        //~}
         HandlePosChange();
         UpdateToolbar();
         UpdateMarginWidth();
@@ -8560,8 +8591,6 @@ void UpdateToolbar()
 static void  _UpdateToolbarDelayed()
 {
   bool const bDocModified = GetDocModified();
-  SetWindowTitle(Globals.hwndMain, s_uidsAppTitle, s_bIsProcessElevated, IDS_MUI_UNTITLED, Globals.CurrentFile,
-                 Settings.PathNameFormat, bDocModified, IDS_MUI_READONLY, s_bFileReadOnly, s_wchTitleExcerpt);
 
   if (!Settings.ShowToolbar) { return; }
 
@@ -9378,6 +9407,17 @@ void UpdateUI()
   COND_SHOW_ZOOM_CALLTIP();
 }
 
+
+//=============================================================================
+//
+//  UpdateTitleBar()
+//
+void UpdateTitleBar() {
+  SetWindowTitle(Globals.hwndMain, s_uidsAppTitle, s_bIsProcessElevated, IDS_MUI_UNTITLED, Globals.CurrentFile,
+                 Settings.PathNameFormat, GetDocModified(), IDS_MUI_READONLY, s_bFileReadOnly, s_wchTitleExcerpt);
+  PostMessage(Globals.hwndMain, WM_NCACTIVATE, FALSE, -1);
+  PostMessage(Globals.hwndMain, WM_NCACTIVATE, TRUE, 0);
+}
 
 
 //=============================================================================

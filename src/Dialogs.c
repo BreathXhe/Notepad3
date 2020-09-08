@@ -3372,18 +3372,18 @@ static INT_PTR CALLBACK SelectDefEncodingDlgProc(HWND hwnd, UINT umsg, WPARAM wP
     case WM_INITDIALOG:
       {
         SetWindowLongPtr(hwnd, DWLP_USER, (LONG_PTR)lParam);
+        
         SetDialogIconNP3(hwnd);
-
         InitWindowCommon(hwnd, true);
 
 #ifdef D_NP3_WIN10_DARK_MODE
         if (UseDarkMode()) {
           SetExplorerTheme(GetDlgItem(hwnd, IDOK));
           SetExplorerTheme(GetDlgItem(hwnd, IDCANCEL));
-          SetExplorerTheme(GetDlgItem(hwnd, IDC_ENCODINGLIST));
+          //~SetExplorerTheme(GetDlgItem(hwnd, IDC_ENCODINGLIST)); ~ OWNERDRAWN -> WM_DRAWITEM
           //SetExplorerTheme(GetDlgItem(hwnd, IDC_RESIZEGRIP));
-          int const ctl[] = { IDC_USEASREADINGFALLBACK, IDC_ASCIIASUTF8, IDC_RELIABLE_DETECTION_RES, IDC_NFOASOEM, 
-                              IDC_ENCODINGFROMFILEVARS, IDC_NOUNICODEDETECTION, IDC_NOANSICPDETECTION, IDC_STATIC };
+          int const ctl[] = { IDC_ENCODINGLIST, IDC_USEASREADINGFALLBACK, IDC_ASCIIASUTF8, IDC_RELIABLE_DETECTION_RES,
+                              IDC_NFOASOEM, IDC_ENCODINGFROMFILEVARS, IDC_NOUNICODEDETECTION, IDC_NOANSICPDETECTION, IDC_STATIC };
           for (int i = 0; i < COUNTOF(ctl); ++i) {
             SetWindowTheme(GetDlgItem(hwnd, ctl[i]), L"", L""); // remove theme for BS_AUTORADIOBUTTON
           }
@@ -3399,6 +3399,7 @@ static INT_PTR CALLBACK SelectDefEncodingDlgProc(HWND hwnd, UINT umsg, WPARAM wP
         DeleteObject(hbmp);
         SendDlgItemMessage(hwnd, IDC_ENCODINGLIST, CBEM_SETIMAGELIST, 0, (LPARAM)himl);
         SendDlgItemMessage(hwnd, IDC_ENCODINGLIST, CB_SETEXTENDEDUI, true, 0);
+        //SendDlgItemMessage(hwnd, IDC_ENCODINGLIST, CBEM_SETEXTENDEDSTYLE, 0, CBES_EX_TEXTENDELLIPSIS);
 
         Encoding_AddToComboboxEx(GetDlgItem(hwnd, IDC_ENCODINGLIST), pdd->idEncoding, 0);
 
@@ -3449,13 +3450,35 @@ static INT_PTR CALLBACK SelectDefEncodingDlgProc(HWND hwnd, UINT umsg, WPARAM wP
         AllowDarkModeForWindow(hwnd, darkModeEnabled);
         RefreshTitleBarThemeColor(hwnd);
 
-        int const buttons[] = { IDOK, IDCANCEL, IDC_ENCODINGLIST };
+        int const buttons[] = { IDOK, IDCANCEL };
         for (int id = 0; id < COUNTOF(buttons); ++id) {
           HWND const hBtn = GetDlgItem(hwnd, buttons[id]);
           AllowDarkModeForWindow(hBtn, darkModeEnabled);
           SendMessage(hBtn, WM_THEMECHANGED, 0, 0);
         }
         UpdateWindow(hwnd);
+      }
+      break;
+
+    case WM_DRAWITEM:
+      {
+        /// TODO: migrate: currently "ComboBoxEx32" control is used, instead of COMBOBOX control
+        /// "ComboBoxEx32" does not support WM_DRAWITEM (OwnerDrawn)
+        /// see https://docs.microsoft.com/en-us/windows/win32/controls/comboboxex-control-reference
+        /// vs
+        /// https://docs.microsoft.com/en-us/windows/win32/controls/create-an-owner-drawn-combo-box
+        /// 
+        if (LOWORD(wParam) == IDC_ENCODINGLIST)
+        {
+          const DRAWITEMSTRUCT *const pDIS = (const DRAWITEMSTRUCT *const)lParam;
+
+          //HWND const hWndItem = pDIS->hwndItem;
+          HDC const hdc = pDIS->hDC;
+          //RECT const rc = pDIS->rcItem;
+
+          SetBkColor(hdc, UseDarkMode() ? g_rgbDarkBkgColor : GetSysColor(COLOR_BTNFACE));
+          SetTextColor(hdc, UseDarkMode() ? g_rgbDarkTextColor : GetSysColor(COLOR_BTNTEXT));
+        }
       }
       break;
 
@@ -3497,7 +3520,8 @@ static INT_PTR CALLBACK SelectDefEncodingDlgProc(HWND hwnd, UINT umsg, WPARAM wP
           }
           break;
 
-        case IDOK: {
+        case IDOK:
+          {
             PENCODEDLG pdd = (PENCODEDLG)GetWindowLongPtr(hwnd, DWLP_USER);
             if (Encoding_GetFromComboboxEx(GetDlgItem(hwnd, IDC_ENCODINGLIST), &pdd->idEncoding)) {
               if (pdd->idEncoding < 0) {
@@ -3519,7 +3543,7 @@ static INT_PTR CALLBACK SelectDefEncodingDlgProc(HWND hwnd, UINT umsg, WPARAM wP
               PostMessage(hwnd, WM_NEXTDLGCTL, (WPARAM)(GetDlgItem(hwnd, IDC_ENCODINGLIST)), 1);
             }
           }
-                 break;
+          break;
 
         case IDCANCEL:
           EndDialog(hwnd, IDCANCEL);
@@ -4776,18 +4800,18 @@ static WCHAR szCachedFile[MAX_PATH] = { L'\0' };
 static WCHAR szCachedDisplayName[MAX_PATH] = { L'\0' };
 static WCHAR szAdditionalTitleInfo[MAX_PATH] = { L'\0' };
 
-bool SetWindowTitle(HWND hwnd, UINT uIDAppName, bool bIsElevated, UINT uIDUntitled,
+void SetWindowTitle(HWND hwnd, UINT uIDAppName, bool bIsElevated, UINT uIDUntitled,
   LPCWSTR lpszFile, int iFormat, bool bModified,
   UINT uIDReadOnly, bool bReadOnly, LPCWSTR lpszExcerpt)
 {
   if (bFreezeAppTitle) {
-    return FALSE;
+    return;
   }
   WCHAR szAppName[SMALL_BUFFER] = { L'\0' };
   WCHAR szUntitled[SMALL_BUFFER] = { L'\0' };
   if (!GetLngString(uIDAppName, szAppName, COUNTOF(szAppName)) ||
       !GetLngString(uIDUntitled, szUntitled, COUNTOF(szUntitled))) {
-    return FALSE;
+    return;
   }
   if (bIsElevated) {
     WCHAR szElevatedAppName[SMALL_BUFFER] = { L'\0' };
@@ -4851,8 +4875,7 @@ bool SetWindowTitle(HWND hwnd, UINT uIDAppName, bool bIsElevated, UINT uIDUntitl
     StringCchCat(szTitle, COUNTOF(szTitle), szAdditionalTitleInfo);
   }
 
-  return SetWindowText(hwnd, szTitle);
-
+  SetWindowText(hwnd, szTitle);
 }
 
 void SetAdditionalTitleInfo(LPCWSTR lpszAddTitleInfo)
@@ -5420,7 +5443,8 @@ void DeleteBitmapButton(HWND hwnd, int nCtrlId)
 void StatusSetText(HWND hwnd, BYTE nPart, LPCWSTR lpszText)
 {
   if (lpszText) {
-    SendMessage(hwnd, SB_SETTEXT, (WPARAM)(SBT_OWNERDRAW | nPart), (LPARAM)lpszText);
+    UINT const flags = SBT_OWNERDRAW | nPart;
+    SendMessage(hwnd, SB_SETTEXT, (WPARAM)flags, (LPARAM)lpszText);
   }
 }
 
@@ -5431,15 +5455,16 @@ void StatusSetText(HWND hwnd, BYTE nPart, LPCWSTR lpszText)
 //
 bool StatusSetTextID(HWND hwnd, BYTE nPart, UINT uID)
 {
+  UINT const flags = SBT_OWNERDRAW | nPart;
   if (!uID) {
-    SendMessage(hwnd, SB_SETTEXT, (WPARAM)(SBT_OWNERDRAW | nPart), (LPARAM)L"");
+    SendMessage(hwnd, SB_SETTEXT, (WPARAM)flags, (LPARAM)L"");
     return TRUE;
   }
   WCHAR szText[256] = { L'\0' };
   if (!GetLngString(uID, szText, COUNTOF(szText))) {
     return FALSE;
   }
-  return (bool)SendMessage(hwnd, SB_SETTEXT, (WPARAM)(SBT_OWNERDRAW | nPart), (LPARAM)szText);
+  return (bool)SendMessage(hwnd, SB_SETTEXT, (WPARAM)flags, (LPARAM)szText);
 }
 
 
