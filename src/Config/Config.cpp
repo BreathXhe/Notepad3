@@ -1264,7 +1264,7 @@ void LoadSettings()
     Defaults2.LineCommentPostfixStrg[0] = L'\0';
     IniSectionGetString(IniSecSettings2, L"LineCommentPostfixStrg", Defaults2.LineCommentPostfixStrg,
       Settings2.LineCommentPostfixStrg, COUNTOF(Settings2.LineCommentPostfixStrg));
-    StrTrimW(Settings2.LineCommentPostfixStrg, L"\"'");
+    StrTrim(Settings2.LineCommentPostfixStrg, L"\"'");
 
     Defaults2.DateTimeFormat[0] = L'\0'; // empty to get <locale date-time format>
     IniSectionGetString(IniSecSettings2, L"DateTimeFormat", Defaults2.DateTimeFormat, Settings2.DateTimeFormat, COUNTOF(Settings2.DateTimeFormat));
@@ -1304,10 +1304,10 @@ void LoadSettings()
 #ifdef D_NP3_WIN10_DARK_MODE
     unsigned int iValue = 0;
     WCHAR color[32] = { L'\0' };
-    Defaults2.DarkModeBkgColor = RGB(0x33, 0x33, 0x33);
+    Defaults2.DarkModeBkgColor = rgbDarkColorBkgRef;
     StringCchPrintf(color, COUNTOF(color), L"%#08x", Defaults2.DarkModeBkgColor);
     IniSectionGetString(IniSecSettings2, L"DarkModeBkgColor", color, wchBuffer, COUNTOF(wchBuffer));
-    if (swscanf_s(wchBuffer, L"%xu", &iValue) == 1) {
+    if (swscanf_s(wchBuffer, L"%x", &iValue) == 1) {
       Settings2.DarkModeBkgColor = RGB((iValue & 0xFF0000) >> 16, (iValue & 0xFF00) >> 8, iValue & 0xFF);
     } else {
       Settings2.DarkModeBkgColor = Defaults2.DarkModeBkgColor;
@@ -1317,10 +1317,10 @@ void LoadSettings()
     }
     Globals.hbrDarkModeBkgBrush = CreateSolidBrush(Settings2.DarkModeBkgColor);
 
-    Defaults2.DarkModeTxtColor = RGB(0xEF, 0xEF, 0xEF);
+    Defaults2.DarkModeTxtColor = rgbDarkColorTxtRef;
     StringCchPrintf(color, COUNTOF(color), L"%#08x", Defaults2.DarkModeTxtColor);
     IniSectionGetString(IniSecSettings2, L"DarkModeTxtColor", color, wchBuffer, COUNTOF(wchBuffer));
-    if (swscanf_s(wchBuffer, L"%xu", &iValue) == 1) {
+    if (swscanf_s(wchBuffer, L"%x", &iValue) == 1) {
       Settings2.DarkModeTxtColor = RGB((iValue & 0xFF0000) >> 16, (iValue & 0xFF00) >> 8, iValue & 0xFF);
     } else {
       Settings2.DarkModeTxtColor = Defaults2.DarkModeTxtColor;
@@ -1359,8 +1359,6 @@ void LoadSettings()
     Settings.EFR_Data.bNoFindWrap = IniSectionGetBool(IniSecSettings, L"NoFindWrap", Defaults.EFR_Data.bNoFindWrap);
     Defaults.EFR_Data.bTransformBS = false;
     Settings.EFR_Data.bTransformBS = IniSectionGetBool(IniSecSettings, L"FindTransformBS", Defaults.EFR_Data.bTransformBS);
-    Defaults.EFR_Data.bAutoEscCtrlChars = false;
-    Settings.EFR_Data.bAutoEscCtrlChars = IniSectionGetBool(IniSecSettings, L"AutoEscCtrlChars", Defaults.EFR_Data.bAutoEscCtrlChars);
     Defaults.EFR_Data.bWildcardSearch = false;
     Settings.EFR_Data.bWildcardSearch = IniSectionGetBool(IniSecSettings, L"WildcardSearch", Defaults.EFR_Data.bWildcardSearch);
     Defaults.EFR_Data.bOverlappingFind = false;
@@ -1516,7 +1514,7 @@ void LoadSettings()
     StringCchCopyW(Defaults.ToolbarButtons, COUNTOF(Defaults.ToolbarButtons), (Globals.iCfgVersionRead < CFG_VER_0002) ? TBBUTTON_DEFAULT_IDS_V1 : TBBUTTON_DEFAULT_IDS_V2);
     IniSectionGetString(IniSecSettings, L"ToolbarButtons", Defaults.ToolbarButtons, Settings.ToolbarButtons, COUNTOF(Settings.ToolbarButtons));
 
-    GET_BOOL_VALUE_FROM_INISECTION(ShowMenubar, true);
+    GET_BOOL_VALUE_FROM_INISECTION(ShowMenubar, false); // DarkMode switch
     GET_BOOL_VALUE_FROM_INISECTION(ShowToolbar, true);
     GET_BOOL_VALUE_FROM_INISECTION(ShowStatusbar, true);
 
@@ -1679,7 +1677,10 @@ void LoadSettings()
     StringCchPrintf(tchSciFontQuality, COUNTOF(tchSciFontQuality), L"%ix%i SciFontQuality", ResX, ResY);
     Settings2.SciFontQuality = clampi(IniSectionGetInt(IniSecWindow, tchSciFontQuality, Settings2.SciFontQuality), SC_EFF_QUALITY_DEFAULT, SC_EFF_QUALITY_LCD_OPTIMIZED);
 
-    IniSectionGetString(Constants.Styles_Section, Constants.StylingThemeName, L"", Globals.SelectedThemeName, COUNTOF(Globals.SelectedThemeName));
+    // ------------------------------------------------------------------------
+
+    IniSectionGetString(Constants.Styles_Section, L"ThemeFileName", L"", Globals.LightThemeName, COUNTOF(Globals.LightThemeName));
+    IniSectionGetString(Constants.Styles_Section, L"DarkThemeFileName", L"", Globals.DarkThemeName, COUNTOF(Globals.DarkThemeName));
 
     // define scintilla internal codepage
     int const iSciDefaultCodePage = SC_CP_UTF8; // default UTF8
@@ -1709,7 +1710,7 @@ void LoadSettings()
   }
 
   // Scintilla Styles
-  Style_Load();
+  Style_Init();
 
   ResetIniFileCache();
 }
@@ -1787,12 +1788,6 @@ static bool _SaveSettings(bool bForceSaveSettings)
   }
   else {
     IniSectionDelete(IniSecSettings, L"FindTransformBS", false);
-  }
-  if (Settings.EFR_Data.bAutoEscCtrlChars != Defaults.EFR_Data.bAutoEscCtrlChars) {
-    IniSectionSetBool(IniSecSettings, L"AutoEscCtrlChars", Settings.EFR_Data.bAutoEscCtrlChars);
-  }
-  else {
-    IniSectionDelete(IniSecSettings, L"AutoEscCtrlChars", false);
   }
   if (Settings.EFR_Data.bWildcardSearch != Defaults.EFR_Data.bWildcardSearch) {
     IniSectionSetBool(IniSecSettings, L"WildcardSearch", Settings.EFR_Data.bWildcardSearch);
@@ -2029,16 +2024,20 @@ static bool _SaveSettings(bool bForceSaveSettings)
   const WCHAR* const IniSecStyles = Constants.Styles_Section;
   // --------------------------------------------------------------------------
 
-  switch (Globals.idxSelectedTheme) {
-    case 1: 
-      Style_ToIniSection(Globals.bIniFileFromScratch, true); // Scintilla Styles
-      //~break;     
-    case 0: // fall trough
-      IniSectionDelete(IniSecStyles, Constants.StylingThemeName, false);
-      break;
-    default:
-      IniSectionSetString(IniSecStyles, Constants.StylingThemeName, Theme_Files[Globals.idxSelectedTheme].szName);
-      break;
+  if (GetModeThemeIndex() == 1) {
+    Style_ToIniSection(Globals.bIniFileFromScratch, true); // Scintilla Styles
+  }
+
+  if (Globals.idxLightModeTheme == 0) {
+    IniSectionDelete(IniSecStyles, L"ThemeFileName", false);
+  } else {
+    IniSectionSetString(IniSecStyles, L"ThemeFileName", Globals.LightThemeName);
+  }
+  
+  if (Globals.idxDarkModeTheme == 0) {
+    IniSectionDelete(IniSecStyles, L"DarkThemeFileName", false);
+  } else {
+    IniSectionSetString(IniSecStyles, L"DarkThemeFileName", Globals.DarkThemeName);
   }
 
   return true;
@@ -2141,7 +2140,7 @@ __try {
       }
     }
 
-    if (Globals.idxSelectedTheme == 1) {
+    if (GetModeThemeIndex() == 1) {
       Style_SaveSettings(bForceSaveSettings);
     }
 
@@ -2151,7 +2150,7 @@ __try {
   }
 
   // separate INI files for Style-Themes
-  if (Globals.idxSelectedTheme >= 2)
+  if (GetModeThemeIndex() >= 2)
   {
     Style_SaveSettings(bForceSaveSettings);
   }

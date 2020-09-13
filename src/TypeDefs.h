@@ -185,7 +185,6 @@ typedef struct _editfindreplace
 {
   UINT fuFlags;
   bool bTransformBS;
-  bool bAutoEscCtrlChars;
   bool bFindClose;
   bool bReplaceClose;
   bool bOverlappingFind;
@@ -200,7 +199,7 @@ typedef struct _editfindreplace
 
 } EDITFINDREPLACE, *LPEDITFINDREPLACE, *LPCEDITFINDREPLACE;
 
-#define INIT_EFR_DATA  { 0, false, false, false, false, false, false, false, false, false, true, NULL, "", ""  }
+#define INIT_EFR_DATA  { 0, false, false, false, false, false, false, false, false, true, NULL, "", ""  }
 #define IDMSG_SWITCHTOFIND    300
 #define IDMSG_SWITCHTOREPLACE 301
 
@@ -245,9 +244,12 @@ typedef struct _cmq
 
 // --------------------------------------------------------------------------
 
-#define rgbRedColorRef    (RGB(255, 170, 170))
-#define rgbGreenColorRef  (RGB(170, 255, 170))
-#define rgbBlueColorRef   (RGB(170, 200, 255))
+#define rgbRedColorRef       (RGB(255, 170, 170))
+#define rgbGreenColorRef     (RGB(170, 255, 170))
+#define rgbBlueColorRef      (RGB(170, 200, 255))
+#define rgbBlueColorRef      (RGB(170, 200, 255))
+#define rgbDarkColorBkgRef   (RGB(0x1F, 0x1F, 0x1F))
+#define rgbDarkColorTxtRef   (RGB(0xEF, 0xEF, 0xEF))
 
 // --------------------------------------------------------------------------
 
@@ -303,8 +305,6 @@ typedef struct _constants_t
   int const          StdDefaultLexerID; // Pure Text Files
   const WCHAR* const FileBrowserMiniPath;
   const WCHAR* const FileSearchGrepWin;
-  const WCHAR* const StylingThemeName;
-
   const WCHAR* const Settings_Section;
   const WCHAR* const Settings2_Section;
   const WCHAR* const Window_Section;
@@ -381,19 +381,22 @@ typedef struct _globals_t
   bool      bFindReplCopySelOrClip;
   bool      bReplaceInitialized;
   bool      bDocHasInconsistentEOLs;
-  unsigned  idxSelectedTheme;
+  unsigned  idxLightModeTheme;
+  unsigned  idxDarkModeTheme;
+
+#ifdef D_NP3_WIN10_DARK_MODE
+  HBRUSH hbrDarkModeBkgBrush;
+#endif
 
   FR_STATES FindReplaceMatchFoundState;
 
-#ifdef D_NP3_WIN10_DARK_MODE
-  HBRUSH    hbrDarkModeBkgBrush;
-#endif
+  WCHAR LightThemeName[SMALL_BUFFER];
+  WCHAR DarkThemeName[SMALL_BUFFER];
 
-  WCHAR     SelectedThemeName[SMALL_BUFFER];
-  WCHAR     WorkingDirectory[MAX_PATH];
-  WCHAR     IniFile[MAX_PATH];
-  WCHAR     IniFileDefault[MAX_PATH];
-  WCHAR     CurrentFile[MAX_PATH];
+  WCHAR WorkingDirectory[MAX_PATH];
+  WCHAR IniFile[MAX_PATH];
+  WCHAR IniFileDefault[MAX_PATH];
+  WCHAR CurrentFile[MAX_PATH];
 
 } GLOBALS_T, *PGLOBALS_T;
 

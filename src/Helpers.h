@@ -226,6 +226,7 @@ inline COLORREF GetModeWndTextColor(const bool bDarkMode) {
 #endif
 }
 
+
 #ifdef D_NP3_WIN10_DARK_MODE
 
 inline INT_PTR SetDarkModeCtlColors(const HDC hdc) {
@@ -342,7 +343,7 @@ inline bool TrimSpcA(LPSTR lpString) {
 
 inline bool TrimSpcW(LPWSTR lpString) {
   if (!lpString || !*lpString) { return false; }
-  return (bool)StrTrimW(lpString, L" \t\v");
+  return (bool)StrTrim(lpString, L" \t\v");
 };
 
 #if (defined(UNICODE) || defined(_UNICODE))
@@ -362,9 +363,8 @@ void PathFixBackslashes(LPWSTR lpsz);
 size_t FormatNumberStr(LPWSTR lpNumberStr, size_t cch, int fixedWidth);
 bool SetDlgItemIntEx(HWND hwnd,int nIdItem,UINT uValue);
 
-UINT SetDlgItemTextEx(HWND hDlg, int nIDDlgItem, LPCWSTR lpString, bool escCtrlChar);
 UINT GetDlgItemTextW2MB(HWND hDlg, int nIDDlgItem, LPSTR lpString, int nMaxCount);
-UINT SetDlgItemTextMB2W(HWND hDlg, int nIDDlgItem, LPCSTR lpString, bool escCtrlChar);
+UINT SetDlgItemTextMB2W(HWND hDlg, int nIDDlgItem, LPCSTR lpString);
 LRESULT ComboBox_AddStringMB2W(HWND hwnd, LPCSTR lpString);
 
 
